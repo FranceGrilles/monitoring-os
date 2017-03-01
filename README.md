@@ -5,7 +5,7 @@ This repository provides a set of Nagios probes for monitoring an OpenStack Clou
 
 ## Requirement
 
-To work properly, these OpenStack Nagios probes have the following requirement:
+To work properly, these OpenStack Nagios probes have the following requirements:
 * Python 2.7
 * python-openstacksdk
 
@@ -23,7 +23,7 @@ Nagios probe directory and made usable by the Nagios user:
 ## Configuration
 
 ### OS probes configuration
-For each monitored OpenStack Cloud, a specific configuration file (ini format) needs to be created. It may be placed in the Nagios home directory. This configuration fileshould only be readable by the Nagios user:
+For each monitored OpenStack Cloud, a specific configuration file (ini format) needs to be created. It may be placed in the Nagios home directory. This configuration file should only be readable by the Nagios user:
 ```
 # cat /var/spool/nagios/.creds/my_site.conf
 [keystone_authtoken]
@@ -41,7 +41,7 @@ cacert = /etc/pki/tls/certs/CA.pem
 The cacert parameter is not mandatory.
 
 
-Before to configure Nagios to use this probes, it is wise to check that they are working properly:
+Before configuring Nagios to use these probes, it is wise to check that they are working properly:
 ```
 # sudo -u nagios /usr/lib64/nagios/plugins/check_os_keystone /var/spool/nagios/.creds/my_site.conf
 OK - Keystone API successfully tested.
@@ -49,7 +49,7 @@ OK - Keystone API successfully tested.
 
 ### Nagios configuration
 
-Once the probes are correctly installed and configured, the Nagios configuration can be modified to use them. The following command is defined:
+Once the probes are correctly installed and configured, the Nagios configuration can be modified to use them. Add the following command definition:
 ```
 define command{
         command_name            check_keystone_api
@@ -58,9 +58,9 @@ define command{
         }
 ```
 
-In a standard CentOS 7 configuration, $USER1$ may be set to /usr/lib64/nagios/plugins/ and $USER2$ to /var/spool/nagios/.creds
+In a standard CentOS 7 configuration, $USER1$ may be set to /usr/lib64/nagios/plugins and $USER2$ to /var/spool/nagios/.creds
 
-This service is created for each keystone service to monitor:
+Create a service definition for each keystone server to monitor:
 ```
 define service{
         use                     openstack-keystone-template
@@ -68,4 +68,3 @@ define service{
         check_command           check_keystone_api!my_site.conf
         }
 ```
-
