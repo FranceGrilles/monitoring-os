@@ -15,15 +15,12 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-import os
 import sys
 
 import argparse
 import ConfigParser
 import socket
 import requests
-
-from six.moves import urllib
 
 
 def get_os_params(config_file):
@@ -49,13 +46,15 @@ def get_os_params(config_file):
     return os_params
 
 
-def get_token(auth_uri, username, password, project_name, domain_name, cacert):
-    url = auth_uri + '/auth/tokens'
+def get_token(keystone_params):
+    '''Return Keystone token
+    '''
+    url = keystone_params['auth_uri'] + '/auth/tokens'
 
-    if not cacert:
+    if not keystone_params['cacert']:
         ca_check = False
     else:
-        ca_check = cacert
+        ca_check = keystone_params['cacert']
 
     headers = {'Content-Type': 'application/json'}
     data = '''{
@@ -77,15 +76,20 @@ def get_token(auth_uri, username, password, project_name, domain_name, cacert):
       }
     }
   }
-}''' % (username, domain_name, password, project_name, domain_name)
+}''' % (keystone_params['username'], keystone_params['user_domain_name'],
+        keystone_params['password'], keystone_params['project_name'],
+        keystone_params['user_domain_name'])
     req = requests.post(url, data, headers=headers, verify=ca_check)
     if req.status_code == 201 and 'X-Subject-Token' in req.headers:
         return req.headers['X-Subject-Token']
     return None
 
+
 def check_api(host, port, token):
+    '''Check the Glance API
+    '''
     headers = {'Content-Type': 'application/json', 'X-Auth-Token': token}
-    url = 'http://' + host +':' + str(port) + '/v2/images'
+    url = 'http://' + host + ':' + str(port) + '/v2/images'
     req = requests.get(url, headers=headers)
     exit_code = 2
     msg = 'CRITICAL - Failed to get the Glance image list'
@@ -93,8 +97,10 @@ def check_api(host, port, token):
         data = req.json()
         image_count = len(data['images'])
         exit_code = 0
-        msg = "OK - Glance API successfully tested: %s images are available." % image_count
+        msg = ("OK - Glance API successfully tested: %s"
+               " images are available." % image_count)
     return (exit_code, msg)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Check Glance API.",
@@ -117,12 +123,7 @@ def main():
             sys.exit(2)
 
         # Check that the API is working
-        token = get_token(params['keystone']['auth_uri'],
-                          params['keystone']['username'],
-                          params['keystone']['password'],
-                          params['keystone']['project_name'],
-                          params['keystone']['user_domain_name'],
-                          params['keystone']['cacert'])
+        token = get_token(params['keystone'])
 
         if not token:
             print("CRITICAL - Failed to get token from Keystone"
@@ -133,7 +134,8 @@ def main():
         print(msg)
         sys.exit(exit_code)
 
-    except Exception as ex:
+    except Exception as ex:  # pylint: disable=broad-except
+        # All other exceptional conditions, we report as 'UNKNOWN' probe status
         print("UNKNOWN - Unexpected error while testing "
               "Keystone API: %s" % (str(ex)))
         sys.exit(3)
