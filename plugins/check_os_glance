@@ -97,7 +97,7 @@ def check_api(host, port, token):
         data = req.json()
         image_count = len(data['images'])
         exit_code = 0
-        msg = ("OK - Glance API successfully tested: %s"
+        msg = ("OK - Glance API successfully tested: %i"
                " images are available." % image_count)
     return (exit_code, msg)
 
