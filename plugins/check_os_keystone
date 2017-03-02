@@ -100,7 +100,7 @@ def main():
                   " server: %s" % (keystone_host))
             sys.exit(2)
 
-    except Exception as ex: # pylint: disable=broad-except
+    except Exception as ex:  # pylint: disable=broad-except
         # All other exceptional conditions, we report as 'UNKNOWN' probe status
         print("UNKNOWN - Unexpected error while testing "
               "Keystone API: %s" % (str(ex)))
