@@ -32,15 +32,13 @@ from six.moves import urllib
 def get_os_params(config_file):
     '''Return OpenStack parameters
     '''
-    os_params = {'keystone': {}, 'cinder': {}}
     os_params = {'username': None, 'password': None,
                  'project_name': None, 'user_domain_name': None,
                  'project_domain_name': None, 'auth_uri': None,
                  'cacert': None}
     config_parser = ConfigParser.ConfigParser()
     config_parser.read(config_file)
-    if (not config_parser.has_section('keystone_authtoken') or
-            not config_parser.has_section('cinder')):
+    if not config_parser.has_section('keystone_authtoken'):
         return os_params
     for param in os_params.keys():
         if config_parser.has_option('keystone_authtoken', param):
