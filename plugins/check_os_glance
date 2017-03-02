@@ -137,7 +137,7 @@ def main():
     except Exception as ex:  # pylint: disable=broad-except
         # All other exceptional conditions, we report as 'UNKNOWN' probe status
         print("UNKNOWN - Unexpected error while testing "
-              "Keystone API: %s" % (str(ex)))
+              "Glance API: %s" % (str(ex)))
         sys.exit(3)
 
 if __name__ == '__main__':
