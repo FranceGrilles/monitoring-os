@@ -15,6 +15,10 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+'''
+Command-line interface to check if the Glance API is working.
+'''
+
 import sys
 
 import argparse
@@ -22,39 +26,37 @@ import ConfigParser
 import socket
 import requests
 
+from six.moves import urllib
+
 
 def get_os_params(config_file):
     '''Return OpenStack parameters
     '''
-    os_params = {'keystone': {}, 'glance': {}}
-    keystone_params = {'username': None, 'password': None,
-                       'project_name': None, 'user_domain_name': None,
-                       'project_domain_name': None, 'auth_uri': None,
-                       'cacert': None}
-    glance_params = {'port': None, 'host': None}
+    os_params = {'username': None, 'password': None,
+                 'project_name': None, 'user_domain_name': None,
+                 'project_domain_name': None, 'auth_uri': None,
+                 'cacert': None}
     config_parser = ConfigParser.ConfigParser()
     config_parser.read(config_file)
-    if (not config_parser.has_section('keystone_authtoken') or
-            not config_parser.has_section('glance')):
+    if not config_parser.has_section('keystone_authtoken'):
         return os_params
-    for param in keystone_params.keys():
+    for param in os_params.keys():
         if config_parser.has_option('keystone_authtoken', param):
-            os_params['keystone'][param] = config_parser.get('keystone_authtoken', param)
-    for param in glance_params.keys():
-        if config_parser.has_option('glance', param):
-            os_params['glance'][param] = config_parser.get('glance', param)
+            os_params[param] = config_parser.get('keystone_authtoken', param)
     return os_params
 
 
-def get_token(keystone_params):
-    '''Return Keystone token
+def get_conn_params(os_params):
+    '''Return Keystone token and API's endpoint
     '''
-    url = keystone_params['auth_uri'] + '/auth/tokens'
+    url = os_params['auth_uri'] + '/auth/tokens'
+    token = None
+    endpoint = None
 
-    if not keystone_params['cacert']:
+    if not os_params['cacert']:
         ca_check = False
     else:
-        ca_check = keystone_params['cacert']
+        ca_check = os_params['cacert']
 
     headers = {'Content-Type': 'application/json'}
     data = '''{
@@ -76,23 +78,36 @@ def get_token(keystone_params):
       }
     }
   }
-}''' % (keystone_params['username'], keystone_params['user_domain_name'],
-        keystone_params['password'], keystone_params['project_name'],
-        keystone_params['user_domain_name'])
+}''' % (os_params['username'], os_params['user_domain_name'],
+        os_params['password'], os_params['project_name'],
+        os_params['user_domain_name'])
     req = requests.post(url, data, headers=headers, verify=ca_check)
     if req.status_code == 201 and 'X-Subject-Token' in req.headers:
-        return req.headers['X-Subject-Token']
-    return None
+        token = req.headers['X-Subject-Token']
+        res = req.json()
+        for endpoints in res['token']['catalog']:
+            if endpoints['name'] == 'glance':
+                for endpoint_iface in endpoints['endpoints']:
+                    if endpoint_iface['interface'] == 'public':
+                        endpoint = endpoint_iface['url']
+                        break
+                break
+
+    return (token, endpoint)
 
 
-def check_api(host, port, token):
+def check_api(endpoint, token):
     '''Check the Glance API
+
+    :param endpoint:
+    :param token:
     '''
     headers = {'Content-Type': 'application/json', 'X-Auth-Token': token}
-    url = 'http://' + host + ':' + str(port) + '/v2/images'
+    url = endpoint + '/v2/images'
     req = requests.get(url, headers=headers)
     exit_code = 2
     msg = 'CRITICAL - Failed to get the Glance image list'
+
     if req.status_code == 200:
         data = req.json()
         image_count = len(data['images'])
@@ -103,6 +118,8 @@ def check_api(host, port, token):
 
 
 def main():
+    '''Main loop
+    '''
     parser = argparse.ArgumentParser(description="Check Glance API.",
                                      version="0.1")
     parser.add_argument('config_file', metavar='CONFIG_FILE', type=str,
@@ -110,10 +127,25 @@ def main():
     args = parser.parse_args()
     config_file = args.config_file
 
-    params = get_os_params(config_file)
-    glance_host = params['glance']['host']
-    glance_port = int(params['glance']['port'])
+    os_params = get_os_params(config_file)
     try:
+        # Check that the API is working
+        token, endpoint = get_conn_params(os_params)
+
+        if not token:
+            print("CRITICAL - Failed to get token from Keystone"
+                  " server: %s" % (auth_uri))
+            sys.exit(2)
+
+        if not endpoint:
+            print("CRITICAL - Failed to get Glance endpoint from keystone"
+                  " server: %s" % (auth_uri))
+            sys.exit(2)
+
+        parsed_url = urllib.parse.urlparse(endpoint)
+        glance_host = parsed_url.hostname
+        glance_port = int(parsed_url.port)
+
         # Verify that the port is reachable
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         result = sock.connect_ex((glance_host, glance_port))
@@ -122,15 +154,7 @@ def main():
                   "on port %s" % (glance_host, glance_port))
             sys.exit(2)
 
-        # Check that the API is working
-        token = get_token(params['keystone'])
-
-        if not token:
-            print("CRITICAL - Failed to get token from Keystone"
-                  " server: %s" % (auth_uri))
-            sys.exit(2)
-
-        (exit_code, msg) = check_api(glance_host, glance_port, token)
+        (exit_code, msg) = check_api(endpoint, token)
         print(msg)
         sys.exit(exit_code)
 
