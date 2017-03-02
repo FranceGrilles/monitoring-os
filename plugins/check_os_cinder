@@ -86,7 +86,7 @@ def get_conn_params(os_params):
         token = req.headers['X-Subject-Token']
         res = req.json()
         for endpoints in res['token']['catalog']:
-            if endpoints['name'] == 'cinder':
+            if endpoints['name'] == 'cinderv2':
                 for endpoint_iface in endpoints['endpoints']:
                     if endpoint_iface['interface'] == 'public':
                         endpoint = endpoint_iface['url']
