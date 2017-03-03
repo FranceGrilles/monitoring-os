@@ -25,6 +25,8 @@ import requests
 
 from six.moves import urllib
 
+__version__ = "0.2"
+
 
 def get_os_params(config_file):
     '''Return OpenStack parameters
@@ -43,15 +45,16 @@ def get_os_params(config_file):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Check Keystone API.",
-                                     version="0.1")
+    parser = argparse.ArgumentParser(description="Check Keystone API.")
+    parser.add_argument('-v', '--version', action='version',
+                        version='%(prog)s  ' + __version__)
     parser.add_argument('config_file', metavar='CONFIG_FILE', type=str,
                         help=('Configuration file'))
     args = parser.parse_args()
     config_file = args.config_file
 
-    params = get_os_params(config_file)
-    parsed_url = urllib.parse.urlparse(params['auth_uri'])
+    os_params = get_os_params(config_file)
+    parsed_url = urllib.parse.urlparse(os_params['auth_uri'])
     keystone_host = parsed_url.hostname
     keystone_port = int(parsed_url.port)
     try:
@@ -65,28 +68,29 @@ def main():
 
         # Check that the API is working
         headers = {'Content-Type': 'application/json'}
-        data = '''{
-"auth": {
-  "identity": {
-    "methods": ["password"],
-      "password": {
-        "user": {
-          "name": "%s",
-          "domain": {"name": "%s"},
-          "password": "%s"
-        }
-      }
-    }
-  }
-}''' % (params['username'], params['user_domain_name'], params['password'])
+        data = ('{'
+                '    "auth": {'
+                '        "identity": {'
+                '            "methods": ["password"],'
+                '            "password": {'
+                '                "user": {'
+                '                    "name": "%s",'
+                '                    "domain": {"name": "%s"},'
+                '                    "password": "%s"'
+                '                }'
+                '            }'
+                '        }'
+                '    }'
+                '}') % (os_params['username'], os_params['user_domain_name'],
+                        os_params['password'])
 
-        url = params['auth_uri'] + '/auth/tokens'
+        url = os_params['auth_uri'] + '/auth/tokens'
 
-        if params['cacert']:
-            if os.path.isfile(params['cacert']):
-                ca_check = params['cacert']
+        if os_params['cacert']:
+            if os.path.isfile(os_params['cacert']):
+                ca_check = os_params['cacert']
             else:
-                print("UNKNOWN - No such CA Cert: %s" % (params['cacert']))
+                print("UNKNOWN - No such CA Cert: %s" % (os_params['cacert']))
                 sys.exit(3)
         else:
             ca_check = False
