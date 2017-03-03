@@ -22,6 +22,8 @@ import ConfigParser
 import socket
 import requests
 
+from six.moves import urllib
+
 
 def get_os_params(config_file):
     '''Return OpenStack parameters
@@ -113,6 +115,8 @@ def main():
     params = get_os_params(config_file)
     glance_host = params['glance']['host']
     glance_port = int(params['glance']['port'])
+    parsed_url = urllib.parse.urlparse(params['auth_uri'])
+    keystone_host = parsed_url.hostname
     try:
         # Verify that the port is reachable
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -127,7 +131,7 @@ def main():
 
         if not token:
             print("CRITICAL - Failed to get token from Keystone"
-                  " server: %s" % (auth_uri))
+                  " server: %s" % (keystone_host))
             sys.exit(2)
 
         (exit_code, msg) = check_api(glance_host, glance_port, token)
