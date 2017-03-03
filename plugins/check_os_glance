@@ -105,8 +105,8 @@ def check_api(host, port, token):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Check Glance API.",
-                                     version="0.1")
+    parser = argparse.ArgumentParser(description="Check Glance API.")
+    parser.add_argument('--version', action='version', version='%(prog)s 0.1')
     parser.add_argument('config_file', metavar='CONFIG_FILE', type=str,
                         help=('Configuration file'))
     args = parser.parse_args()
