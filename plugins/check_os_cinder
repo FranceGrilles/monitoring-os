@@ -15,9 +15,9 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-'''
-Command-line interface to check if the Cinder API is working.
-'''
+"""
+Command-line interface to check the Cinder API.
+"""
 
 import sys
 
@@ -121,7 +121,7 @@ def check_api(endpoint, token):
 def main():
     '''Main loop
     '''
-    parser = argparse.ArgumentParser(description="Check Cinder API.")
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-v', '--version', action='version',
                         version='%(prog)s  ' + __version__)
     parser.add_argument('config_file', metavar='CONFIG_FILE', type=str,
