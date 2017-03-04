@@ -68,21 +68,20 @@ def main():
 
         # Check that the API is working
         headers = {'Content-Type': 'application/json'}
-        data = ('{'
-                '    "auth": {'
-                '        "identity": {'
-                '            "methods": ["password"],'
-                '            "password": {'
-                '                "user": {'
-                '                    "name": "%s",'
-                '                    "domain": {"name": "%s"},'
-                '                    "password": "%s"'
-                '                }'
-                '            }'
-                '        }'
-                '    }'
-                '}') % (os_params['username'], os_params['user_domain_name'],
-                        os_params['password'])
+        data = """{
+"auth": {
+  "identity": {
+    "methods": ["password"],
+      "password": {
+        "user": {
+          "name": "%(username)s",
+          "domain": {"name": "%(user_domaine_name)s"},
+          "password": "%(password)s"
+        }
+      }
+    }
+  }
+}""" % (os_params)
 
         url = os_params['auth_uri'] + '/auth/tokens'
 

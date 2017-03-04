@@ -61,28 +61,27 @@ def get_conn_params(os_params):
         ca_check = os_params['cacert']
 
     headers = {'Content-Type': 'application/json'}
-    data = ('{'
-            '"auth": {'
-            '  "identity": {'
-            '    "methods": ["password"],'
-            '      "password": {'
-            '        "user": {'
-            '          "name": "%s",'
-            '          "domain": {"name": "%s"},'
-            '          "password": "%s"'
-            '        }'
-            '      }'
-            '    },'
-            '    "scope": {'
-            '      "project": {'
-            '        "name": "%s",'
-            '        "domain": { "name": "%s" }'
-            '      }'
-            '    }'
-            '  }'
-            '}') % (os_params['username'], os_params['user_domain_name'],
-                    os_params['password'], os_params['project_name'],
-                    os_params['user_domain_name'])
+    data = """{
+"auth": {
+  "identity": {
+    "methods": ["password"],
+      "password": {
+        "user": {
+          "name": "%(username)s",
+          "domain": {"name": "%(user_domain_name)s"},
+          "password": "%(password)s"
+        }
+      }
+    },
+    "scope": {
+      "project": {
+        "name": "%(project_name)s",
+        "domain": { "name": "%(user_domain_name)s" }
+      }
+    }
+  }
+}""" % (os_params)
+
     req = requests.post(url, data, headers=headers, verify=ca_check)
     if req.status_code == 201 and 'X-Subject-Token' in req.headers:
         token = req.headers['X-Subject-Token']
