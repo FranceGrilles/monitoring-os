@@ -79,7 +79,7 @@ def main():
 
         # Check that the API is working
         headers = {'Content-Type': 'application/json'}
-        data = """{
+        data = '''{
 "auth": {
   "identity": {
     "methods": ["password"],
@@ -92,7 +92,7 @@ def main():
       }
     }
   }
-}""" % (os_params)
+}''' % (os_params)
 
         url = os_params['auth_uri'] + '/auth/tokens'
 
