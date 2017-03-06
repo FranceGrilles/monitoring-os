@@ -30,6 +30,11 @@ from six.moves import urllib
 
 __version__ = "0.2"
 
+STATE_OK = 0
+STATE_WARNING = 1
+STATE_CRITICAL = 2
+STATE_UNKNOWN = 3
+
 
 def get_os_params(config_file):
     '''Return OpenStack parameters
@@ -106,13 +111,13 @@ def check_api(endpoint, token):
     headers = {'Content-Type': 'application/json', 'X-Auth-Token': token}
     url = endpoint + '/v2.0/networks.json'
     req = requests.get(url, headers=headers)
-    exit_code = 2
+    exit_code = STATE_CRITICAL
     msg = 'CRITICAL - Failed to get the Neutron network list'
 
     if req.status_code == 200:
         data = req.json()
         network_count = len(data['networks'])
-        exit_code = 0
+        exit_code = STATE_OK
         msg = ("OK - Neutron API successfully tested: %i"
                " networks are available." % network_count)
     return (exit_code, msg)
@@ -137,12 +142,12 @@ def main():
         if not token:
             print("CRITICAL - Failed to get token from Keystone"
                   " endpoint: %s" % (os_params['auth_uri']))
-            sys.exit(2)
+            sys.exit(STATE_CRITICAL)
 
         if not endpoint:
-            print("CRITICAL - Failed to get Neutron endpoint from keystone"
-                  " server: %s" % (auth_uri))
-            sys.exit(2)
+            print("CRITICAL - Failed to get Neutron endpoint"
+                  " from Keystone endpoint: %s" % (os_params['auth_uri']))
+            sys.exit(STATE_CRITICAL)
 
         parsed_url = urllib.parse.urlparse(endpoint)
         neutron_host = parsed_url.hostname
@@ -154,7 +159,7 @@ def main():
         if result != 0:
             print("CRITICAL - cannot connect to neutron server %s "
                   "on port %s" % (neutron_host, neutron_port))
-            sys.exit(2)
+            sys.exit(STATE_CRITICAL)
 
         (exit_code, msg) = check_api(endpoint, token)
         print(msg)
@@ -164,7 +169,7 @@ def main():
         # All other exceptional conditions, we report as 'UNKNOWN' probe status
         print("UNKNOWN - Unexpected error while testing "
               "Neutron API: %s" % (str(ex)))
-        sys.exit(3)
+        sys.exit(STATE_UNKNOWN)
 
 if __name__ == '__main__':
     main()

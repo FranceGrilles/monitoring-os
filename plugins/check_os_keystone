@@ -31,6 +31,11 @@ from six.moves import urllib
 
 __version__ = "0.2"
 
+STATE_OK = 0
+STATE_WARNING = 1
+STATE_CRITICAL = 2
+STATE_UNKNOWN = 3
+
 
 def get_os_params(config_file):
     '''Return OpenStack parameters
@@ -49,6 +54,8 @@ def get_os_params(config_file):
 
 
 def main():
+    '''Main loop
+    '''
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-v', '--version', action='version',
                         version='%(prog)s  ' + __version__)
@@ -68,7 +75,7 @@ def main():
         if result != 0:
             print("CRITICAL - cannot connect to keystone server %s "
                   "on port %s" % (keystone_host, keystone_port))
-            sys.exit(2)
+            sys.exit(STATE_CRITICAL)
 
         # Check that the API is working
         headers = {'Content-Type': 'application/json'}
@@ -94,24 +101,24 @@ def main():
                 ca_check = os_params['cacert']
             else:
                 print("UNKNOWN - No such CA Cert: %s" % (os_params['cacert']))
-                sys.exit(3)
+                sys.exit(STATE_UNKNOWN)
         else:
             ca_check = False
 
         req = requests.post(url, data, headers=headers, verify=ca_check)
         if req.status_code == 201 and u'token' in req.json():
             print("OK - Keystone API successfully tested.")
-            sys.exit(0)
+            sys.exit(STATE_OK)
         else:
             print("CRITICAL - Failed to get token from Keystone"
                   " server: %s" % (keystone_host))
-            sys.exit(2)
+            sys.exit(STATE_CRITICAL)
 
     except Exception as ex:  # pylint: disable=broad-except
         # All other exceptional conditions, we report as 'UNKNOWN' probe status
         print("UNKNOWN - Unexpected error while testing "
               "Keystone API: %s" % (str(ex)))
-        sys.exit(3)
+        sys.exit(STATE_UNKNOWN)
 
 if __name__ == '__main__':
     main()
