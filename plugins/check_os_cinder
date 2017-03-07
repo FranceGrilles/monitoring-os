@@ -16,7 +16,7 @@
 # under the License.
 
 """
-Command-line interface to check the Glance API.
+Command-line interface to check the Cinder API.
 """
 
 import sys
@@ -92,7 +92,7 @@ def get_conn_params(os_params):
         token = req.headers['X-Subject-Token']
         res = req.json()
         for endpoints in res['token']['catalog']:
-            if endpoints['name'] == 'glance':
+            if endpoints['name'] == 'cinderv2':
                 for endpoint_iface in endpoints['endpoints']:
                     if endpoint_iface['interface'] == 'public':
                         endpoint = endpoint_iface['url']
@@ -103,20 +103,20 @@ def get_conn_params(os_params):
 
 
 def check_api(endpoint, token):
-    '''Check the Glance API
+    '''Check the Cinder API
     '''
     headers = {'Content-Type': 'application/json', 'X-Auth-Token': token}
-    url = endpoint + '/v2/images'
+    url = endpoint + '/volumes/detail'
     req = requests.get(url, headers=headers)
     exit_code = STATE_CRITICAL
-    msg = 'CRITICAL - Failed to get the Glance image list'
+    msg = 'CRITICAL - Failed to get the Cinder volume list'
 
     if req.status_code == 200:
         data = req.json()
-        image_count = len(data['images'])
+        volume_count = len(data['volumes'])
         exit_code = STATE_OK
-        msg = ("OK - Glance API successfully tested: %i"
-               " images are available." % image_count)
+        msg = ("OK - Cinder API successfully tested: %i"
+               " volumes are available." % volume_count)
     return (exit_code, msg)
 
 
@@ -142,20 +142,20 @@ def main():
             sys.exit(STATE_CRITICAL)
 
         if not endpoint:
-            print("CRITICAL - Failed to get Glance endpoint"
+            print("CRITICAL - Failed to get Cinder endpoint"
                   " from Keystone endpoint: %s" % (os_params['auth_uri']))
             sys.exit(STATE_CRITICAL)
 
         parsed_url = urllib.parse.urlparse(endpoint)
-        glance_host = parsed_url.hostname
-        glance_port = int(parsed_url.port)
+        cinder_host = parsed_url.hostname
+        cinder_port = int(parsed_url.port)
 
         # Verify that the port is reachable
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        result = sock.connect_ex((glance_host, glance_port))
+        result = sock.connect_ex((cinder_host, cinder_port))
         if result != 0:
-            print("CRITICAL - cannot connect to glance server %s "
-                  "on port %s" % (glance_host, glance_port))
+            print("CRITICAL - cannot connect to cinder server %s "
+                  "on port %s" % (cinder_host, cinder_port))
             sys.exit(STATE_CRITICAL)
 
         (exit_code, msg) = check_api(endpoint, token)
@@ -165,7 +165,7 @@ def main():
     except Exception as ex:  # pylint: disable=broad-except
         # All other exceptional conditions, we report as 'UNKNOWN' probe status
         print("UNKNOWN - Unexpected error while testing "
-              "Glance API: %s" % (str(ex)))
+              "Cinder API: %s" % (str(ex)))
         sys.exit(STATE_UNKNOWN)
 
 if __name__ == '__main__':
