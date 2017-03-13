@@ -1,0 +1,244 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+#
+# Copyright 2017 CNRS and University of Strasbourg
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+
+"""
+Command-line interface to execute an OpenStack scenario.
+"""
+
+import sys
+import time
+
+import argparse
+import ConfigParser
+
+from keystoneauth1.identity import v3
+from keystoneauth1 import session
+from novaclient import client as novaclient
+from cinderclient import client as cinderclient
+
+__version__ = "0.1"
+
+STATE_OK = 0
+STATE_WARNING = 1
+STATE_CRITICAL = 2
+STATE_UNKNOWN = 3
+
+
+def get_os_params(config_file):
+    '''Return OpenStack parameters
+    '''
+    os_params = {'username': None, 'password': None,
+                 'project_name': None, 'user_domain_name': None,
+                 'project_domain_name': None, 'auth_uri': None,
+                 'cacert': None}
+    config_parser = ConfigParser.ConfigParser()
+    config_parser.read(config_file)
+    if not config_parser.has_section('keystone_authtoken'):
+        return None
+    for param in os_params.keys():
+        if config_parser.has_option('keystone_authtoken', param):
+            os_params[param] = config_parser.get('keystone_authtoken', param)
+    return os_params
+
+
+def get_scenario_params(config_file):
+    '''Return Scenario parameters
+    '''
+    scenario_params = {'flavor_id': None, 'image_id': None,
+                       'network_id': None, 'use_floating_ip': False}
+    config_parser = ConfigParser.ConfigParser()
+    config_parser.read(config_file)
+    if not config_parser.has_section('openstack_scenario'):
+        return None
+    for param in scenario_params.keys():
+        if config_parser.has_option('openstack_scenario', param):
+            scenario_params[param] = config_parser.get('openstack_scenario',
+                                                       param)
+    return scenario_params
+
+
+def get_keystone_session(os_params):
+    '''Return a Keystone session
+    '''
+    auth_args = {
+        'auth_url': os_params['auth_uri'],
+        'username': os_params['username'],
+        'password': os_params['password'],
+        'project_name': os_params['project_name'],
+        'user_domain_name': os_params['user_domain_name'],
+        'project_domain_name': os_params['project_domain_name']
+    }
+    if os_params['cacert']:
+        verify = os_params['cacert']
+    else:
+        verify = True
+
+    auth = v3.Password(**auth_args)
+    keystone_session = session.Session(auth=auth, verify=verify)
+    return keystone_session
+
+
+def wait_for_state(module, status, timeout):
+    '''Wait for a specific state when using an OpenStack module
+    '''
+    duration = 0
+    while duration < timeout:
+        module.get()
+        if module.status == status:
+            break
+        else:
+            time.sleep(5)
+            duration += 5
+    return module
+
+
+def main():
+    '''Main loop
+    '''
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('-v', '--version', action='version',
+                        version='%(prog)s  ' + __version__)
+    parser.add_argument('config_file', metavar='CONFIG_FILE', type=str,
+                        help=('Configuration file'))
+    args = parser.parse_args()
+    config_file = args.config_file
+
+    os_params = get_os_params(config_file)
+    if not os_params:
+        print("UNKNOWN - Failed to get the Keystone parameters"
+              " from config file: %s" % (config_file))
+        sys.exit(STATE_UNKNOWN)
+
+    keystone_session = get_keystone_session(os_params)
+    if not keystone_session:
+        print("CRITICAL - Failed to get a session from Keystone"
+              " endpoint: %s" % (os_params['auth_uri']))
+        sys.exit(STATE_CRITICAL)
+
+    scenario_params = get_scenario_params(config_file)
+    if not scenario_params:
+        print("UNKNOWN - Failed to get the scenario parameters"
+              " from config file: %s" % (config_file))
+        sys.exit(STATE_UNKNOWN)
+
+    # Do not start the probe if server or volume from a previous test
+    # are remaining
+    nova = novaclient.Client("2.1", session=keystone_session)
+    cinder = cinderclient.Client('2', session=keystone_session)
+    server_basename = 'FG_server_probe'
+    volume_basename = 'FG_volume_probe'
+    for server in nova.servers.list():
+        if (len(server.name) > len(server_basename) and
+                server.name[0:len(server_basename)] == server_basename):
+            print("WARNING - a previous probe server is already "
+                  "running: %s" % (server.id))
+            sys.exit(STATE_WARNING)
+    for volume in cinder.volumes.list():
+        if (len(volume.name) > len(volume_basename) and
+                volume.name[0:len(volume_basename)] == volume_basename):
+            print("WARNING - a previous probe volume is already "
+                  "existing: %s" % (volume.id))
+            sys.exit(STATE_WARNING)
+
+    # Check scenario parameters
+    flavor = nova.flavors.find(id=scenario_params['flavor_id'])
+    if not flavor:
+        print("CRITICAL - Failed to find a flavor matching "
+              "the flavor_id: %s" % (scenario_params['flavor_id']))
+        sys.exit(STATE_CRITICAL)
+
+    network = nova.networks.find(id=scenario_params['network_id'])
+    if not network:
+        print("CRITICAL - Failed to find a network matching "
+              "the network_id: %s" % (scenario_params['network_id']))
+        sys.exit(STATE_CRITICAL)
+
+    image = nova.images.find(id=scenario_params['image_id'])
+    if not image:
+        print("CRITICAL - Failed to find an image matching"
+              "the image_id: %s" % (scenario_params['image_id']))
+        sys.exit(STATE_CRITICAL)
+
+    # Check server creation
+    probe_id = int(time.time())
+    server_name = server_basename + '_' + str(probe_id)
+    volume_name = volume_basename + '_' + str(probe_id)
+    server = nova.servers.create(name=server_name, image=image.id,
+                                 flavor=flavor.id,
+                                 nics=[{'net-id': network.id}])
+    server = wait_for_state(server, 'ACTIVE', 120)
+    if server.status != 'ACTIVE':
+        print("CRITICAL - Cannot create server. Status of server after "
+              " %i seconds: %s" % (server.status, 120))
+        server.delete()
+        sys.exit(STATE_CRITICAL)
+
+    # Check volume management
+    volume = cinder.volumes.create(name=volume_name, size=1)
+    volume = wait_for_state(volume, 'available', 120)
+    if volume.status != 'available':
+        print("CRITICAL - Cannot create volume. Status of volume after "
+              "%i seconds: %s" % (volume.status, 120))
+        volume.delete()
+        server.delete()
+        sys.exit(STATE_CRITICAL)
+
+    nova.volumes.create_server_volume(server.id, volume.id, None)
+    volume = wait_for_state(volume, 'in-use', 120)
+    server.get()
+    if not server.to_dict()['os-extended-volumes:volumes_attached']:
+        print("CRITICAL - Cannot attach volume %s to "
+              "server %s." % (volume.id, server.id))
+        volume.delete()
+        server.delete()
+        sys.exit(STATE_CRITICAL)
+    nova.volumes.delete_server_volume(server.id, volume.id)
+    time.sleep(5)
+    volume.delete()
+
+    # Check floating ip allocation
+    networks = server.networks.keys()
+    if len(networks) > 1:
+        print("UNKNOWN - Unsupported network configuration. Several networks "
+              "are associated with server %s" % (server.id))
+        server.delete()
+        sys.exit(STATE_UNKNOWN)
+    floating_ips = nova.floating_ips.findall(instance_id=None)
+    if not floating_ips:
+        floating_ip = nova.floating_ips.create()
+    else:
+        floating_ip = floating_ips[0]
+    server.add_floating_ip(floating_ip.ip)
+    server.get()
+    if len(server.networks[networks[0]]) < 2:
+        # The floating IP has not been attached
+        print("CRITICAL - Cannot attach floating ip %s to "
+              "server %s." % (floating_ip.ip, server.id))
+        server.delete()
+        sys.exit(STATE_CRITICAL)
+    else:
+        server.remove_floating_ip(floating_ip.ip)
+
+    # End the probe
+    print("OK - The scenario probe with compute instance %s has been "
+          "successfully completed." % (server.id))
+    server.delete()
+    sys.exit(STATE_OK)
+
+
+if __name__ == '__main__':
+    main()
