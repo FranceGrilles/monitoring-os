@@ -1,15 +1,28 @@
 # Monitoring OpenStack
 
-This repository provides a set of Nagios probes for monitoring an OpenStack Cloud.
+This repository provides a set of Nagios probes for monitoring an OpenStack Cloud. These probes can be categorized in two parts. The first permits to check the API and is composed of the following probes:
+* check_os_cinder
+* check_os_glance
+* check_oskeystone
+* check_os_neutron
+* check_os_nova
 
+The other part is for checking an OpenStack scenario. This probe launch a VM, create and attach storage to the VM, remove and delete the storage, attach and remove a floating IP and delete the VM. It is composed of the following probe:
+* check_os_scenario
 
 ## Requirement
 
-To work properly, these OpenStack Nagios probes have the following requirements:
+The OpenStack API probes require:
 * Python 2.7
-* python-openstacksdk
+* python-six
 
-They have been successfully tested with OpenStack Mitaka and Newton.
+The OpenStack scenario probe requires:
+* Python 2.7
+* python-keystoneauth1
+* python-novaclient
+* python-cinderclient
+
+The probes have been successfully tested with OpenStack Mitaka and Newton.
 
 ## Installation
 
@@ -34,9 +47,17 @@ user_domain_name = default
 project_domain_name = default
 auth_uri = https://keystone.example.org:5000/v3
 cacert = /etc/pki/tls/certs/CA.pem
+
+[openstack_scenario]
+flavor_id = 2
+network_id = 7eb64fb2-0e0e-11e7-8f72-c358c3b0ad79
+image_id = 860feb56-0e0e-11e7-a410-43ffadc83bc1
+
 # ls -l /var/spool/nagios/.creds/my_site.conf
 -rw------- 1 nagios nagios 224 Mar  1 08:51 /var/spool/nagios/.creds/my_site.conf
 ```
+
+network_id is the id of the network available for the _demo_ project and image_id is the id of the image to use when creating the VM.
 
 Please note that:
 * The cacert parameter is not mandatory.
@@ -84,6 +105,11 @@ define command{
                                 ; $ARG1$ = site-config-file
         }
 
+define command{
+        command_name            check_openstack_scenario
+        command_line            $USER1$/check_os_scenario $USER2$/$ARG1$
+                                ; $ARG1$ = site-config-file
+        }
 ```
 
 In a standard CentOS 7 configuration, $USER1$ may be set to /usr/lib64/nagios/plugins and $USER2$ to /var/spool/nagios/.creds
@@ -93,7 +119,7 @@ Then, create a service definition for each OpenStack service to monitor:
 define service{
         name                    openstack-keystone-api
         use                     service-template,graph
-        host_name               keystone.example.org
+        host_name               openstack.example.org
         service_description     OpenStack Keystone API
         check_command           check_keystone_api!my_site.conf
         }
@@ -101,7 +127,7 @@ define service{
 define service{
         name                    openstack-glance-api
         use                     service-template,graph
-        host_name               glance.example.org
+        host_name               openstack.example.org
         service_description     OpenStack Glance API
         check_command           check_glance_api!my_site.conf
         }
@@ -109,7 +135,7 @@ define service{
 define service{
         name                    openstack-cinder-api
         use                     service-template,graph
-        host_name               cinder.example.org
+        host_name               openstack.example.org
         service_description     OpenStack Cinder API
         check_command           check_cinder_api!my_site.conf
         }
@@ -117,7 +143,7 @@ define service{
 define service{
         name                    openstack-neutron-api
         use                     service-template,graph
-        host_name               neutron.example.org
+        host_name               openstack.example.org
         service_description     OpenStack Neutron API
         check_command           check_neutron_api!my_site.conf
         }
@@ -125,9 +151,17 @@ define service{
 define service{
         name                    openstack-nova-api
         use                     service-template,graph
-        host_name               nova.example.org
+        host_name               openstack.example.org
         service_description     OpenStack Nova API
         check_command           check_nova_api!my_site.conf
+        }
+
+define service{
+        name                    openstack-openstack-scenario
+        use                     service-template,graph
+        host_name               openstack.example.org
+        service_description     OpenStack Scenario
+        check_command           check_openstack_scenario!my_site.conf
         }
 ```
 
