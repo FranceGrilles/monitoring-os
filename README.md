@@ -3,7 +3,7 @@
 This repository provides a set of Nagios probes for monitoring an OpenStack Cloud. These probes can be categorized in two parts. The first permits to check the API and is composed of the following probes:
 * check_os_cinder
 * check_os_glance
-* check_oskeystone
+* check_os_keystone
 * check_os_neutron
 * check_os_nova
 
@@ -57,7 +57,7 @@ image_id = 860feb56-0e0e-11e7-a410-43ffadc83bc1
 -rw------- 1 nagios nagios 224 Mar  1 08:51 /var/spool/nagios/.creds/my_site.conf
 ```
 
-network_id is the id of the network available for the _demo_ project and image_id is the id of the image to use when creating the VM.
+network_id is the id of the network available to the _demo_ project (but not the network containing the floating ip pool) and image_id is the id of the image to use when creating the VM.
 
 Please note that:
 * The cacert parameter is not mandatory.
