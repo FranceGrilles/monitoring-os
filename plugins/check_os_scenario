@@ -183,7 +183,7 @@ def main():
     server = wait_for_state(server, 'ACTIVE', 120)
     if server.status != 'ACTIVE':
         print("CRITICAL - Cannot create server. Status of server after "
-              " %i seconds: %s" % (server.status, 120))
+              " %i seconds: %s" % (120, server.status))
         server.delete()
         sys.exit(STATE_CRITICAL)
 
