@@ -1,7 +1,6 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# Copyright 2017 CNRS and University of Strasbourg
+
+# Copyright 2017-2019 CNRS and University of Strasbourg
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
@@ -19,6 +18,7 @@
 Command-line interface to check the Glance API.
 """
 
+import os
 import sys
 
 import argparse
@@ -28,7 +28,7 @@ import requests
 
 from six.moves import urllib
 
-__version__ = "0.2"
+__version__ = "1.0"
 
 STATE_OK = 0
 STATE_WARNING = 1
@@ -39,31 +39,27 @@ STATE_UNKNOWN = 3
 def get_os_params(config_file):
     '''Return OpenStack parameters
     '''
-    os_params = {'username': None, 'password': None,
-                 'project_name': None, 'user_domain_name': None,
-                 'project_domain_name': None, 'auth_uri': None,
-                 'cacert': None}
+    os_params = {
+        'username': None, 'password': None, 'project_name': None,
+        'user_domain_name': None, 'project_domain_name': None,
+        'auth_uri': None, 'cacert': None, 'insecure': False
+    }
     config_parser = ConfigParser.ConfigParser()
     config_parser.read(config_file)
     if not config_parser.has_section('keystone_authtoken'):
-        return os_params
+        return None
     for param in os_params.keys():
         if config_parser.has_option('keystone_authtoken', param):
             os_params[param] = config_parser.get('keystone_authtoken', param)
     return os_params
 
 
-def get_conn_params(os_params):
+def get_conn_params(os_params, cert=None):
     '''Return Keystone token and API's endpoint
     '''
     url = os_params['auth_uri'] + '/auth/tokens'
     token = None
     endpoint = None
-
-    if not os_params['cacert']:
-        ca_check = False
-    else:
-        ca_check = os_params['cacert']
 
     headers = {'Content-Type': 'application/json'}
     data = '''{
@@ -87,7 +83,10 @@ def get_conn_params(os_params):
   }
 }''' % (os_params)
 
-    req = requests.post(url, data, headers=headers, verify=ca_check)
+    if cert is not None:
+        req = requests.post(url, data, headers=headers, verify=cert)
+    else:
+        req = requests.post(url, data, headers=headers)
     if req.status_code == 201 and 'X-Subject-Token' in req.headers:
         token = req.headers['X-Subject-Token']
         res = req.json()
@@ -102,21 +101,24 @@ def get_conn_params(os_params):
     return (token, endpoint)
 
 
-def check_api(endpoint, token):
+def check_api(endpoint, token, cert=None):
     '''Check the Glance API
     '''
     headers = {'Content-Type': 'application/json', 'X-Auth-Token': token}
     url = endpoint + '/v2/images'
-    req = requests.get(url, headers=headers)
+    if cert is not None:
+        req = requests.get(url, headers=headers, verify=cert)
+    else:
+        req = requests.get(url, headers=headers)
     exit_code = STATE_CRITICAL
-    msg = 'CRITICAL - Failed to get the Glance image list'
+    msg = "CRITICAL - Failed to get the Glance image list\n"
 
     if req.status_code == 200:
         data = req.json()
         image_count = len(data['images'])
         exit_code = STATE_OK
         msg = ("OK - Glance API successfully tested: %i"
-               " images are available." % image_count)
+               " images are available.\n" % image_count)
     return (exit_code, msg)
 
 
@@ -132,18 +134,43 @@ def main():
     config_file = args.config_file
 
     os_params = get_os_params(config_file)
+    if os_params is None:
+        sys.stdout.write(
+            "UNKNOWN - Unable to parse the probe "
+            "configuration file\n"
+        )
+        sys.exit(STATE_UNKNOWN)
+
+    if os_params['cacert'] is not None:
+        if os_params['insecure']:
+            cert = False
+        else:
+            if os.path.isfile(os_params['cacert']):
+                cert = os_params['cacert']
+            else:
+                sys.stdout.write(
+                    "UNKNOWN - No such CA Cert: %s\n" % (os_params['cacert'])
+                )
+                sys.exit(STATE_UNKNOWN)
+    else:
+        cert = None
+
     try:
         # Check that the API is working
-        token, endpoint = get_conn_params(os_params)
+        token, endpoint = get_conn_params(os_params, cert)
 
         if not token:
-            print("CRITICAL - Failed to get token from Keystone"
-                  " endpoint: %s" % (os_params['auth_uri']))
+            sys.stdout.write(
+                "CRITICAL - Failed to get token from Keystone "
+                "endpoint: %s\n" % (os_params['auth_uri'])
+            )
             sys.exit(STATE_CRITICAL)
 
         if not endpoint:
-            print("CRITICAL - Failed to get Glance endpoint"
-                  " from Keystone endpoint: %s" % (os_params['auth_uri']))
+            sys.stdout.write(
+                "CRITICAL - Failed to get Glance endpoint "
+                "from Keystone endpoint: %s\n" % (os_params['auth_uri'])
+            )
             sys.exit(STATE_CRITICAL)
 
         parsed_url = urllib.parse.urlparse(endpoint)
@@ -154,19 +181,24 @@ def main():
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         result = sock.connect_ex((glance_host, glance_port))
         if result != 0:
-            print("CRITICAL - cannot connect to glance server %s "
-                  "on port %s" % (glance_host, glance_port))
+            sys.stdout.write(
+                "CRITICAL - cannot connect to glance server %s "
+                "on port %s\n" % (glance_host, glance_port)
+            )
             sys.exit(STATE_CRITICAL)
 
-        (exit_code, msg) = check_api(endpoint, token)
-        print(msg)
+        (exit_code, msg) = check_api(endpoint, token, cert=cert)
+        sys.stdout.write(msg)
         sys.exit(exit_code)
 
     except Exception as ex:  # pylint: disable=broad-except
         # All other exceptional conditions, we report as 'UNKNOWN' probe status
-        print("UNKNOWN - Unexpected error while testing "
-              "Glance API: %s" % (str(ex)))
+        sys.stdout.write(
+            "UNKNOWN - Unexpected error while testing "
+            "Glance API: %s\n" % (str(ex))
+        )
         sys.exit(STATE_UNKNOWN)
+
 
 if __name__ == '__main__':
     main()
