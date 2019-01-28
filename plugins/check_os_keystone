@@ -1,7 +1,6 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# Copyright 2017 CNRS and University of Strasbourg
+
+# Copyright 2017-2019 CNRS and University of Strasbourg
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
@@ -29,7 +28,7 @@ import requests
 
 from six.moves import urllib
 
-__version__ = "0.2"
+__version__ = "1.0"
 
 STATE_OK = 0
 STATE_WARNING = 1
@@ -40,13 +39,15 @@ STATE_UNKNOWN = 3
 def get_os_params(config_file):
     '''Return OpenStack parameters
     '''
-    os_params = {'username': None, 'password': None, 'project_name': None,
-                 'user_domain_name': None, 'project_domain_name': None,
-                 'auth_uri': None, 'cacert': None}
+    os_params = {
+        'username': None, 'password': None, 'project_name': None,
+        'user_domain_name': None, 'project_domain_name': None,
+        'auth_uri': None, 'cacert': None, 'insecure': False
+    }
     config_parser = ConfigParser.ConfigParser()
     config_parser.read(config_file)
     if not config_parser.has_section('keystone_authtoken'):
-        return {}
+        return None
     for param in os_params.keys():
         if config_parser.has_option('keystone_authtoken', param):
             os_params[param] = config_parser.get('keystone_authtoken', param)
@@ -65,16 +66,40 @@ def main():
     config_file = args.config_file
 
     os_params = get_os_params(config_file)
+    if os_params is None:
+        sys.stdout.write(
+            "UNKNOWN - Unable to parse the probe "
+            "configuration file\n"
+        )
+        sys.exit(STATE_UNKNOWN)
+
     parsed_url = urllib.parse.urlparse(os_params['auth_uri'])
     keystone_host = parsed_url.hostname
     keystone_port = int(parsed_url.port)
+
+    if os_params['cacert'] is not None:
+        if os_params['insecure']:
+            cert = False
+        else:
+            if os.path.isfile(os_params['cacert']):
+                cert = os_params['cacert']
+            else:
+                sys.stdout.write(
+                    "UNKNOWN - No such CA Cert: %s\n" % (os_params['cacert'])
+                )
+                sys.exit(STATE_UNKNOWN)
+    else:
+        cert = None
+
     try:
         # Verify that the port is reachable
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         result = sock.connect_ex((keystone_host, keystone_port))
         if result != 0:
-            print("CRITICAL - cannot connect to keystone server %s "
-                  "on port %s" % (keystone_host, keystone_port))
+            sys.stdout.write(
+                "CRITICAL - cannot connect to keystone server %s "
+                "on port %s\n" % (keystone_host, keystone_port)
+            )
             sys.exit(STATE_CRITICAL)
 
         # Check that the API is working
@@ -96,29 +121,29 @@ def main():
 
         url = os_params['auth_uri'] + '/auth/tokens'
 
-        if os_params['cacert']:
-            if os.path.isfile(os_params['cacert']):
-                ca_check = os_params['cacert']
-            else:
-                print("UNKNOWN - No such CA Cert: %s" % (os_params['cacert']))
-                sys.exit(STATE_UNKNOWN)
+        if cert is not None:
+            req = requests.post(url, data, headers=headers, verify=cert)
         else:
-            ca_check = False
+            req = requests.post(url, data, headers=headers)
 
-        req = requests.post(url, data, headers=headers, verify=ca_check)
         if req.status_code == 201 and u'token' in req.json():
-            print("OK - Keystone API successfully tested.")
+            sys.stdout.write("OK - Keystone API successfully tested.\n")
             sys.exit(STATE_OK)
         else:
-            print("CRITICAL - Failed to get token from Keystone"
-                  " server: %s" % (keystone_host))
+            sys.stdout.write(
+                "CRITICAL - Failed to get token from Keystone"
+                " server: %s\n" % (keystone_host)
+            )
             sys.exit(STATE_CRITICAL)
 
     except Exception as ex:  # pylint: disable=broad-except
         # All other exceptional conditions, we report as 'UNKNOWN' probe status
-        print("UNKNOWN - Unexpected error while testing "
-              "Keystone API: %s" % (str(ex)))
+        sys.stdout.write(
+            "UNKNOWN - Unexpected error while testing "
+            "Keystone API: %s\n" % (str(ex))
+        )
         sys.exit(STATE_UNKNOWN)
+
 
 if __name__ == '__main__':
     main()
